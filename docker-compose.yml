@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  compose-manager:
+    build: .
+    container_name: compose-manager
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    volumes:
+      # Option 1: Mount your SSH private key (read-only)
+      - ~/.ssh/ci_key.pem:/root/.ssh/id_rsa:ro
+      # Option 2: Pass via SSH_PRIVATE_KEY env var below (uncomment below)
+    restart: unless-stopped
