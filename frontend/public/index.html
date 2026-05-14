@@ -289,6 +289,44 @@
       text-overflow: ellipsis;
     }
 
+    .ports-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .ports-title {
+      color: var(--text-mid);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-size: 10px;
+      margin-bottom: 6px;
+    }
+
+    .port-line {
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .port-line .svc {
+      color: var(--accent);
+      margin-right: 6px;
+    }
+
+    .port-line.conflict {
+      color: var(--danger);
+    }
+
+    .conflict-note {
+      margin-top: 6px;
+      color: var(--danger);
+      font-size: 10px;
+    }
+
     .card-actions {
       display: flex;
       gap: 8px;
@@ -635,6 +673,26 @@
         ? `${p.runningCount}/${p.serviceCount} services`
         : '';
 
+      const ports = Array.isArray(p.ports) ? p.ports : [];
+      const portLines = ports.length
+        ? ports
+            .map((m) => {
+              const proto = (m.protocol || 'tcp').toLowerCase();
+              const hostIp = m.hostIp ? `${escHtml(m.hostIp)}:` : '';
+              const key = `${m.hostPort}/${proto}`;
+              const isConflict = Array.isArray(p.conflicts)
+                ? p.conflicts.some(c => `${c.hostPort}/${(c.protocol || 'tcp').toLowerCase()}` === key)
+                : false;
+              return `<div class="port-line ${isConflict ? 'conflict' : ''}"><span class="svc">${escHtml(m.service)}</span>${hostIp}${escHtml(m.hostPort)} -> ${escHtml(m.containerPort)}/${escHtml(proto)}</div>`;
+            })
+            .join('')
+        : '<div class="port-line">No published host ports</div>';
+
+      const conflictCount = Array.isArray(p.conflicts) ? p.conflicts.length : 0;
+      const conflictNote = conflictCount > 0
+        ? `<div class="conflict-note">Conflict detected on ${conflictCount} mapping(s)</div>`
+        : '';
+
       card.innerHTML = `
         <div class="card-header">
           <div class="project-name">${escHtml(p.name)}</div>
@@ -644,6 +702,11 @@
           </div>
         </div>
         <div class="project-path" title="${escHtml(p.dir)}">${escHtml(p.dir)}${serviceInfo ? ` · ${serviceInfo}` : ''}</div>
+        <div class="ports-block">
+          <div class="ports-title">Host Port Usage</div>
+          ${portLines}
+          ${conflictNote}
+        </div>
         <div class="card-actions">
           <button class="btn btn-up" onclick="runAction('up', '${escAttr(p.dir)}', '${escAttr(p.name)}', this)" ${p.running ? 'disabled' : ''}>
             <span class="btn-text">▶ Up</span>
