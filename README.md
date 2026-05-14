@@ -1,99 +1,126 @@
 # Compose Manager
 
-A GUI tool to manage Docker Compose projects on a remote server via SSH with optional jump host support.
-Runs as a Docker container on your local machine.
+Compose Manager is an open-source web UI for managing Docker Compose stacks on a remote server over SSH. It discovers compose projects, shows their status and ports, and lets you bring services up, down, or inspect logs from a clean browser interface.
 
-## Setup
+## Features
 
-### 1. Create and edit `.env`
+- Discover `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, and `compose.yaml` files on remote servers.
+- Manage multiple VMs or a single host from one dashboard.
+- View running status, service counts, published ports, and port conflicts.
+- Start and stop stacks with streaming terminal output.
+- Inspect the last 50 log lines for any project.
+- Run as a Docker container with a simple `docker compose up` workflow.
 
-All runtime configuration is loaded from `.env` via `docker-compose.yml` (`env_file: .env`).
-Set these variables:
+## Docker Hub Image
 
-#### Target Server (Direct SSH or via Jump Host)
-| Variable | Example | Description |
-|---|---|---|
-| `SERVER_IP` | `1x.1x.x.x` | Target server's IP or hostname |
-| `SERVER_USERNAME` | `ubuntu` | SSH username on target server |
+The published image name is:
 
-#### Jump Host (Optional - for proxy SSH tunneling)
-| Variable | Example | Description |
-|---|---|---|
-| `JUMP_HOST_IP` | `203.xxx.xx.xx` | Jump host IP (leave empty if direct SSH) |
-| `JUMP_HOST_USER` | `ubuntu` | Jump host SSH username |
-| `JUMP_HOST_PORT` | `2345` | Jump host SSH port |
+`samirkoirala/compose-manager`
 
-#### Project Directories
-| Variable | Example | Description |
-|---|---|---|
-| `PROJECTS_BASE_DIRS` | `/home/ubuntu/projects,/srv/Projects/` | Comma-separated list of directories containing your compose projects |
+Versioning is automated by GitHub Actions:
 
-### 2. SSH Private Key Setup
+- Each merge to `main` builds and pushes a new image.
+- The workflow auto-increments the latest `vN` tag and publishes the next release as `vN+1`.
+- The same release is also pushed as `latest` and as a commit-specific `sha-...` tag.
 
-You have **two options** to provide your SSH private key:
+If the repository has no prior release tags, the workflow starts from the next integer version. With the existing `v1` Docker Hub tag, the next release will be `v2`.
 
-#### Option A: Mount the file (recommended)
-```yaml
-volumes:
-  - ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro
-```
+## Quick Start
 
-Test it first:
-```bash
-ssh -i ~/.ssh/id_rsa ubuntu@10.10.0.5
-```
-
-#### Option B: Pass via environment variable
-Add your private key as `SSH_PRIVATE_KEY` in `.env`:
-
-**For raw key content:**
-```yaml
-SSH_PRIVATE_KEY="-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"
-```
-
-**For base64-encoded key:**
-```bash
-# Encode your key
-base64 ~/.ssh/id_rsa | tr -d '\n'
-
-# Copy the output and set in .env:
-SSH_PRIVATE_KEY=LS0tLS1CRUdJTi...
-```
-
-#### Jump host connection test:
-```bash
-ssh -i ~/.ssh/id_rsa -J ubuntu@203.78.165.94:2345 ubuntu@10.10.0.5
-```
-
-### 3. Run it
+1. Create a `.env` file in the project root.
+2. Configure your SSH credentials and target server.
+3. Start the app.
 
 ```bash
 docker compose up -d --build
 ```
 
-Open http://localhost:3000 in your browser.
+Open `http://localhost:3000` in your browser.
 
-## How it works
+## Configuration
 
-- On load, it connects via SSH (with jump host if configured) and runs `find` to discover all `docker-compose.yml` / `compose.yml` files under all `PROJECTS_BASE_DIRS` (up to 3 levels deep)
-- For each project, it checks running status via `docker compose ps`
-- **Up** button → `docker compose up -d` (disabled if already running)
-- **Down** button → `docker compose down` (disabled if already stopped)
-- **≡** button → shows last 50 lines of logs
-- All output streams live into the terminal drawer at the bottom
+All runtime configuration is loaded from `.env`.
 
-## Project structure requirements
+### Server Connection
 
-Your VM folder structure should look something like:
+| Variable | Example | Description |
+|---|---|---|
+| `VM_SERVERS` | `10.x.x.x,10.x.x.x` | Optional comma-separated list of VMs shown in the dropdown. |
+| `SERVER_IP` | `10.xx.xx.xx` | Fallback target server if `VM_SERVERS` is not set. |
+| `SERVER_USERNAME` | `ubuntu` | SSH username on the target server. |
+| `PORT` | `3000` | Local web port for the app container. |
+
+### Jump Host
+
+| Variable | Example | Description |
+|---|---|---|
+| `JUMP_HOST_IP` | `2x.xx.xxx.x` | Optional jump host IP or hostname. Leave empty for direct SSH. |
+| `JUMP_HOST_USER` | `ubuntu` | SSH username for the jump host. |
+| `JUMP_HOST_PORT` | `2345` | SSH port for the jump host. |
+
+### Project Discovery
+
+| Variable | Example | Description |
+|---|---|---|
+| `PROJECTS_BASE_DIRS` | `/home/ubuntu/projects,/srv/projects` | Comma-separated directories searched on the remote host. |
+
+### SSH Key Options
+
+You can provide the SSH private key in either of these ways:
+
+#### Option A: Mount a file
+
+```yaml
+volumes:
+  - ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro
 ```
-/home/ubuntu/projects/
-├── nginx/
-│   └── docker-compose.yml
-├── postgres/
-│   └── docker-compose.yml
-└── myapp/
-    ├── docker-compose.yml
-    └── .env
+
+#### Option B: Use an environment variable
+
+Set `SSH_PRIVATE_KEY` in `.env` with either raw key contents or a base64-encoded key.
+
+## Local Development
+
+```bash
+docker compose up --build
 ```
 
-Any depth up to 3 levels is auto-discovered.
+The backend serves the frontend from `frontend/public`, so there is no separate build step for the UI.
+
+## Repository Structure
+
+```text
+.
+├── backend/
+│   ├── package.json
+│   └── server.js
+├── frontend/
+│   └── public/
+│       └── index.html
+├── Dockerfile
+├── docker-compose.yml
+├── LICENSE
+└── README.md
+```
+
+## Release Workflow
+
+The GitHub Actions workflow in `.github/workflows/docker-publish.yml` is responsible for:
+
+- Building the Docker image.
+- Pushing the image to Docker Hub.
+- Publishing versioned tags such as `v2`, `v3`, and so on.
+- Updating `latest` to always point at the newest release.
+
+To enable publishing, add these repository secrets in GitHub:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+## Contributing
+
+Pull requests and issues are welcome. Please keep changes focused and include enough detail for maintainers to review behavior changes quickly.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
