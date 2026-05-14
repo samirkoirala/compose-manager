@@ -30,18 +30,27 @@ function getPrivateKeyPath() {
 
 const keyPath = getPrivateKeyPath();
 
-const SSH_CONFIG = {
-  host: process.env.SERVER_IP,
-  port: 22,
-  username: process.env.SERVER_USERNAME,
-  privateKeyPath: keyPath,
-  proxyJump: process.env.JUMP_HOST_IP ? {
-    host: process.env.JUMP_HOST_IP,
-    port: parseInt(process.env.JUMP_HOST_PORT || '22'),
-    username: process.env.JUMP_HOST_USER,
+// Parse list of available VMs
+const VM_SERVERS = (process.env.VM_SERVERS || process.env.SERVER_IP || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+function getSSHConfig(vmIp) {
+  const host = vmIp || process.env.SERVER_IP;
+  return {
+    host,
+    port: 22,
+    username: process.env.SERVER_USERNAME,
     privateKeyPath: keyPath,
-  } : null,
-};
+    proxyJump: process.env.JUMP_HOST_IP ? {
+      host: process.env.JUMP_HOST_IP,
+      port: parseInt(process.env.JUMP_HOST_PORT || '22'),
+      username: process.env.JUMP_HOST_USER,
+      privateKeyPath: keyPath,
+    } : null,
+  };
+}
 
 const BASE_DIRS = (process.env.PROJECTS_BASE_DIRS || '/home/docker-projects')
   .split(',')
@@ -228,11 +237,18 @@ async function getProjectPorts(ssh, dir) {
   return parsePortsFromComposeYaml(yamlResult.stdout || '');
 }
 
+// List available VMs
+app.get('/api/vms', (req, res) => {
+  res.json({ vms: VM_SERVERS, default: VM_SERVERS[0] || process.env.SERVER_IP });
+});
+
 // Discover all compose projects in all base folders
 app.get('/api/projects', async (req, res) => {
+  const vmIp = req.query.vm || VM_SERVERS[0] || process.env.SERVER_IP;
+  const sshConfig = getSSHConfig(vmIp);
   const ssh = getSSH();
   try {
-    await ssh.connect(SSH_CONFIG);
+    await ssh.connect(sshConfig);
 
     const projects = [];
     const composePaths = [];
@@ -329,7 +345,7 @@ app.get('/api/projects', async (req, res) => {
 // Run compose up or down for a project
 app.post('/api/projects/:action', async (req, res) => {
   const { action } = req.params; // "up" or "down"
-  const { dir } = req.body;
+  const { dir, vm } = req.body;
 
   if (!dir) return res.status(400).json({ error: 'Missing dir' });
   if (!['up', 'down'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
@@ -337,6 +353,8 @@ app.post('/api/projects/:action', async (req, res) => {
   // Prevent path traversal
   if (dir.includes('..')) return res.status(400).json({ error: 'Invalid path' });
 
+  const vmIp = vm || VM_SERVERS[0] || process.env.SERVER_IP;
+  const sshConfig = getSSHConfig(vmIp);
   const ssh = getSSH();
 
   // Set SSE headers for streaming logs
@@ -347,8 +365,8 @@ app.post('/api/projects/:action', async (req, res) => {
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
-    await ssh.connect(SSH_CONFIG);
-    send({ type: 'log', text: `🔌 Connected to ${SSH_CONFIG.host}` });
+    await ssh.connect(sshConfig);
+    send({ type: 'log', text: `🔌 Connected to ${sshConfig.host}` });
     send({ type: 'log', text: `📁 cd ${dir}` });
 
     const cmd = action === 'up'
@@ -382,16 +400,18 @@ app.post('/api/projects/:action', async (req, res) => {
 
 // Get live logs for a project
 app.get('/api/projects/logs', async (req, res) => {
-  const { dir } = req.query;
+  const { dir, vm } = req.query;
   if (!dir || dir.includes('..')) return res.status(400).json({ error: 'Invalid dir' });
 
+  const vmIp = vm || VM_SERVERS[0] || process.env.SERVER_IP;
+  const sshConfig = getSSHConfig(vmIp);
   const ssh = getSSH();
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
-    await ssh.connect(SSH_CONFIG);
+    await ssh.connect(sshConfig);
     await ssh.execCommand(`cd ${dir} && docker compose logs --tail=50 2>&1`, {
       onStdout: chunk => chunk.toString().split('\n').filter(Boolean).forEach(l => send({ type: 'log', text: l })),
       onStderr: chunk => chunk.toString().split('\n').filter(Boolean).forEach(l => send({ type: 'log', text: l })),

@@ -98,22 +98,64 @@
       gap: 20px;
     }
 
-    .vm-badge {
-      display: flex; align-items: center; gap: 8px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 14px;
-      font-size: 12px;
-      color: var(--text-mid);
+    .vm-selector-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
     }
 
-    .vm-badge .dot {
+    .vm-selector-wrap .dot {
       width: 7px; height: 7px;
       border-radius: 50%;
       background: var(--accent);
       box-shadow: 0 0 6px var(--accent);
       animation: pulse 2s infinite;
+      flex-shrink: 0;
+    }
+
+    .vm-selector-wrap .vm-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+
+    .vm-select {
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 32px 6px 12px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s;
+      background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%235a6070' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      min-width: 130px;
+    }
+
+    .vm-select:hover {
+      border-color: var(--accent);
+      background-color: var(--accent-dim);
+    }
+
+    .vm-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+    }
+
+    .vm-select option {
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px;
     }
 
     @keyframes pulse {
@@ -550,9 +592,12 @@
         <div class="logo-text">Compose <span>Manager</span></div>
       </div>
       <div class="header-meta">
-        <div class="vm-badge">
+        <div class="vm-selector-wrap">
           <span class="dot"></span>
-          <span id="vm-host-display">connecting…</span>
+          <span class="vm-label">VM</span>
+          <select class="vm-select" id="vm-select" onchange="onVmChange()">
+            <option value="">Loading…</option>
+          </select>
         </div>
         <button class="refresh-btn" onclick="loadProjects()" id="refresh-btn">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -613,6 +658,33 @@
 
 <script>
   let allProjects = [];
+  let selectedVm = '';
+
+  // Load available VMs into dropdown
+  async function loadVms() {
+    try {
+      const res = await fetch('/api/vms');
+      const data = await res.json();
+      const select = document.getElementById('vm-select');
+      select.innerHTML = '';
+      (data.vms || []).forEach((ip, i) => {
+        const opt = document.createElement('option');
+        opt.value = ip;
+        opt.textContent = ip;
+        if (i === 0) opt.selected = true;
+        select.appendChild(opt);
+      });
+      selectedVm = select.value;
+    } catch (err) {
+      console.error('Failed to load VMs:', err);
+    }
+  }
+
+  function onVmChange() {
+    const select = document.getElementById('vm-select');
+    selectedVm = select.value;
+    loadProjects();
+  }
 
   async function loadProjects() {
     const btn = document.getElementById('refresh-btn');
@@ -625,7 +697,7 @@
     document.getElementById('empty-state').style.display = 'none';
 
     try {
-      const res = await fetch('/api/projects');
+      const res = await fetch(`/api/projects?vm=${encodeURIComponent(selectedVm)}`);
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error || 'Failed to fetch projects');
@@ -750,7 +822,7 @@
       const res = await fetch(`/api/projects/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir })
+        body: JSON.stringify({ dir, vm: selectedVm })
       });
 
       const reader = res.body.getReader();
@@ -795,7 +867,7 @@
     btn.classList.add('loading');
 
     try {
-      const res = await fetch(`/api/projects/logs?dir=${encodeURIComponent(dir)}`);
+      const res = await fetch(`/api/projects/logs?dir=${encodeURIComponent(dir)}&vm=${encodeURIComponent(selectedVm)}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -864,9 +936,7 @@
   }
 
   // Init
-  document.getElementById('vm-host-display').textContent = window.location.hostname !== 'localhost'
-    ? window.location.hostname : 'VM via SSH';
-  loadProjects();
+  loadVms().then(() => loadProjects());
 </script>
 </body>
 </html>
