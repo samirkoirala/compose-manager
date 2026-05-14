@@ -87,6 +87,41 @@ docker compose up --build
 
 The backend serves the frontend from `frontend/public`, so there is no separate build step for the UI.
 
+## Use the published Docker image directly
+
+You can run the published Docker image from Docker Hub without building locally. This is useful for quick deployments or using the image inside orchestration systems.
+
+Run with `docker run` (example):
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e SERVER_IP=10.0.0.10 \
+  -e SERVER_USERNAME=ubuntu \
+  -e PROJECTS_BASE_DIRS=/home/ubuntu/projects \
+  -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro \
+  samirkoirala/compose-manager:latest
+```
+
+Or reference it from your own `docker-compose.yml`:
+
+```yaml
+services:
+  compose-manager:
+    image: samirkoirala/compose-manager:latest # or a specific tag like v2
+    container_name: compose-manager
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro
+    restart: unless-stopped
+```
+
+Notes:
+- Put your runtime variables (SSH user, server IP(s), jump host, and `PROJECTS_BASE_DIRS`) into the `.env` file referenced by `env_file` above.
+- If you prefer not to mount a private key, set `SSH_PRIVATE_KEY` in `.env` with the raw key contents (or base64-encoded) — the container writes it to a secure temp file at runtime.
+
+
 ## Repository Structure
 
 ```text
